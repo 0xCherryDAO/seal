@@ -1,0 +1,11 @@
+aiohttp==3.11.13
+aiosqlite==0.21.0
+async_tls_client==1.0.9
+colorama==0.4.6
+curl_cffi==0.10.0
+loguru==0.7.3
+pydantic==2.11.3
+pysui==0.81.0
+pyuseragents==1.0.5
+questionary==2.1.0
+SQLAlchemy==2.0.40
