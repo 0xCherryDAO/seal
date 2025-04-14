@@ -1,7 +1,7 @@
 MOBILE_PROXY = False
 ROTATE_IP = False
 
-SHUFFLE_WALLETS = False
+SHUFFLE_WALLETS = False #
 
 TG_BOT_TOKEN = ''  # str ('2282282282:AAZYB35L2PoziKsri6RFPOASdkal-z1Wi_s')
 TG_USER_ID = None  # int (22822822) or None
