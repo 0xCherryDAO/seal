@@ -1,5 +1,6 @@
 import random
 import string
+import os
 from asyncio import sleep
 from typing import Optional
 
@@ -8,6 +9,7 @@ from loguru import logger
 from pysui.sui.sui_txn.async_transaction import SuiTransactionAsync
 from pysui.sui.sui_types import SuiString
 
+from config import RETRIES, PAUSE_BETWEEN_RETRIES, PAUSE_BETWEEN_MODULES, UploadSettings
 from src.utils.common.wrappers.decorators import retry
 from src.utils.proxy_manager import Proxy
 from src.utils.request_client.curl_cffi_client import CurlCffiClient
@@ -81,6 +83,8 @@ class FileUploader(SuiAccount, CurlCffiClient):
                 )
                 if address_already_added:
                     await sleep(0.1)
+                    if not UploadSettings.create_new_entry:
+                        return sui_object['content']['fields']['allowlist_id'], sui_object['content']['fields']['id']
                     continue
                 await sleep(10)
                 return sui_object['content']['fields']['allowlist_id'], sui_object['content']['fields']['id']
@@ -101,10 +105,10 @@ class FileUploader(SuiAccount, CurlCffiClient):
                     self.wallet_address
                 ]
             )
-            # simulation_status = await self.simulate_tx(tx)
-            # if simulation_status is False:
-            #     logger.error(f'[{self.wallet_address}] | TX failed while simulating address adding')
-            #     return False
+            simulation_status = await self.simulate_tx(tx)
+            if simulation_status is False:
+                logger.warning(f'[{self.wallet_address}] | Address already added')
+                return False
 
             status, digest = await self.send_tx(tx)
             if status is True:
@@ -185,17 +189,63 @@ class FileUploader(SuiAccount, CurlCffiClient):
         )
         await sleep(0.1)
 
-    @retry()
+    @staticmethod
+    def get_random_image_from_folder(folder_path: str = 'images') -> Optional[str]:
+        if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
+            logger.error(f"Folder {folder_path} doesn't exist")
+            return 'Screenshot_000.png'
+
+        files = os.listdir(folder_path)
+
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+        image_files = [file for file in files if any(file.lower().endswith(ext) for ext in image_extensions)]
+
+        if not image_files:
+            logger.warning(f"No images found in folder {folder_path}")
+            return None
+
+        random_image = random.choice(image_files)
+        logger.info(f"Selected random image: {random_image}")
+
+        return os.path.join(folder_path, random_image)
+
+    async def check_for_entry(self) -> bool:
+        objects = await self.client.get_objects(self.wallet_address, fetch_all=True)
+        data = objects.result_data.to_dict()['data']
+        for sui_object in data:
+            if sui_object[
+                'type'
+            ] == '0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::allowlist::Cap':
+                return True
+
+    @retry(retries=RETRIES, delay=PAUSE_BETWEEN_RETRIES, backoff=1.5)
     async def upload_file(self) -> Optional[bool]:
-        entry_name = self.generate_name()
-        await self.create_allowlist_entry(entry_name)
-        await sleep(4)
+        entry_exists = await self.check_for_entry()
+        if entry_exists and not UploadSettings.create_new_entry:
+            pass
+        elif not entry_exists or UploadSettings.create_new_entry:
+            entry_name = self.generate_name()
+            await self.create_allowlist_entry(entry_name)
+            await sleep(4)
+
         allowlist_id, object_id = await self.get_objects()
 
         await self.add_address(allowlist_id, object_id)
+        number_of_uploads = random.randint(UploadSettings.number_of_uploads[0], UploadSettings.number_of_uploads[1])
+        uploaded = False
+        for i in range(number_of_uploads):
+            image = self.get_random_image_from_folder()
 
-        image_data = self.encode_image_to_bytes('Screenshot_000.png')
-        blob_id = await self.get_blob_id(image_data)
-        if not blob_id:
-            return None
-        return await self.upload_blob(allowlist_id, object_id, blob_id)
+            if not image:
+                return None
+
+            image_data = self.encode_image_to_bytes(image)
+            blob_id = await self.get_blob_id(image_data)
+            if not blob_id:
+                continue
+            uploaded = await self.upload_blob(allowlist_id, object_id, blob_id)
+            if i != number_of_uploads:
+                random_pause = random.randint(PAUSE_BETWEEN_MODULES[0], PAUSE_BETWEEN_MODULES[1])
+                logger.debug(f'Sleeping {random_pause} seconds before next upload...')
+                await sleep(random_pause)
+        return uploaded

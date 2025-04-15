@@ -36,7 +36,6 @@ class SuiAccount:
         result_data = result.result_data
         if result_data.effects.status.status == 'success':
             return True
-        logger.error(f'[{self.wallet_address}] | Claim simulation failed...')
         return False
 
     async def send_tx(self, tx: SuiTransactionAsync):
