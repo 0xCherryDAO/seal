@@ -18,12 +18,27 @@ class SuiAccount:
             mnemonic: str,
             rpc: str = SUI_TESTNET_RPC
     ):
-        self.config = SuiConfig.user_config(rpc_url=rpc)
-        self.config.recover_keypair_and_address(
-            scheme=SignatureScheme.ED25519,
-            mnemonics=mnemonic,
-            derivation_path="m/44'/784'/0'/0'/0'"
-        )
+        if mnemonic.startswith('0x'):
+            key_format = {
+                'wallet_key': mnemonic,
+                'key_scheme': SignatureScheme.ED25519
+            }
+            self.config = SuiConfig.user_config(
+                rpc_url=rpc,
+                prv_keys=[key_format]
+            )
+        elif mnemonic.startswith('suiprivkey'):
+            self.config = SuiConfig.user_config(
+                rpc_url=rpc,
+                prv_keys=[mnemonic]
+            )
+        else:
+            self.config = SuiConfig.user_config(rpc_url=rpc)
+            self.config.recover_keypair_and_address(
+                scheme=SignatureScheme.ED25519,
+                mnemonics=mnemonic,
+                derivation_path="m/44'/784'/0'/0'/0'"
+            )
         self.config.set_active_address(address=SuiAddress(self.config.addresses[0]))
 
         self.client = AsyncClient(self.config)
