@@ -140,7 +140,7 @@ class DataBaseUtils:
 
     async def get_wallet_completed_tasks(self, mnemonic: str) -> list:
         async with self.session() as session:
-            query = select(WalletsTasks).filter_by(mnemonic=mnemonic, status='completed')
+            query = select(WalletsTasks).filter_by(private_key=mnemonic, status='completed')
             result = await session.execute(query)
             tasks = result.scalars().all()
 
