@@ -78,7 +78,7 @@ async def process_route(route: Route) -> None:
         tg_app = TGApp(
             token=TG_BOT_TOKEN,
             tg_id=TG_USER_ID,
-            private_key=private_key
+            mnemonic=private_key
         )
         await tg_app.send_message()
 
