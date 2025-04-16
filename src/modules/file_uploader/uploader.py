@@ -2,12 +2,12 @@ import random
 import string
 import os
 from asyncio import sleep
-from typing import Optional
+from typing import Optional, Literal
 
 import pyuseragents
 from loguru import logger
 from pysui.sui.sui_txn.async_transaction import SuiTransactionAsync
-from pysui.sui.sui_types import SuiString
+from pysui.sui.sui_types import SuiString, SuiU64
 
 from config import RETRIES, PAUSE_BETWEEN_RETRIES, PAUSE_BETWEEN_MODULES, UploadSettings
 from src.utils.common.wrappers.decorators import retry
@@ -20,10 +20,15 @@ class FileUploader(SuiAccount, CurlCffiClient):
     def __init__(
             self,
             private_key: str,
-            proxy: Proxy | None
+            proxy: Proxy | None,
+            module: Literal["allowlist", "subscription"]
     ):
         SuiAccount.__init__(self, mnemonic=private_key)
         CurlCffiClient.__init__(self, proxy=proxy)
+        self.module = module
+
+    def __str__(self) -> str:
+        return f'[{self.wallet_address}] | Uploading file | {self.module.capitalize()} Module.'
 
     @staticmethod
     def generate_name() -> str:
@@ -56,7 +61,7 @@ class FileUploader(SuiAccount, CurlCffiClient):
         status, digest = await self.send_tx(tx)
         if status is True:
             logger.success(
-                f'[{self.wallet_address}] | Successfully created entry with name {entry_name} '
+                f'[{self.wallet_address}] | Successfully created allowlist entry with name {entry_name} '
                 f'| TX: https://testnet.suivision.xyz/txblock/{digest}'
             )
             return True
@@ -71,23 +76,29 @@ class FileUploader(SuiAccount, CurlCffiClient):
         if str(self.wallet_address) in data['content']['fields']['list']:
             return True
 
-    async def get_objects(self) -> Optional[tuple[str, str]]:
+    async def get_objects(self, module: Literal["allowlist", "subscription"]) -> Optional[tuple[str, str]]:
         objects = await self.client.get_objects(self.wallet_address, fetch_all=True)
         data = objects.result_data.to_dict()['data']
         for sui_object in data:
             if sui_object[
                 'type'
-            ] == '0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::allowlist::Cap':
-                address_already_added = await self.check_if_address_already_added(
-                    sui_object['content']['fields']['allowlist_id']
-                )
-                if address_already_added:
-                    await sleep(0.1)
-                    if not UploadSettings.create_new_entry:
-                        return sui_object['content']['fields']['allowlist_id'], sui_object['content']['fields']['id']
-                    continue
-                await sleep(10)
-                return sui_object['content']['fields']['allowlist_id'], sui_object['content']['fields']['id']
+            ] == f'0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::{module}::Cap':
+                id_name_mapping = {
+                    "allowlist": "allowlist_id",
+                    "subscription": "service_id"
+                }
+                if module == "allowlist":
+                    address_already_added = await self.check_if_address_already_added(
+                        sui_object['content']['fields'][id_name_mapping[module]]
+                    )
+                    if address_already_added:
+                        await sleep(0.1)
+                        if not UploadSettings.create_new_entry:
+                            return sui_object['content']['fields']['allowlist_id'], sui_object['content']['fields'][
+                                'id']
+                        continue
+                    await sleep(10)
+                return sui_object['content']['fields'][id_name_mapping[module]], sui_object['content']['fields']['id']
 
     async def add_address(self, allowlist_id: str, object_id: str):
         allowlist_object = await self.client.get_object(allowlist_id)
@@ -157,14 +168,20 @@ class FileUploader(SuiAccount, CurlCffiClient):
                 if response_json['alreadyCertified']:
                     logger.warning(f'File has been already uploaded')
 
-    async def upload_blob(self, allowlist_id: str, object_id: str, blob_id: str):
+    async def upload_blob(
+            self,
+            allowlist_id: str,
+            object_id: str,
+            blob_id: str,
+            module: str
+    ):
         tx = SuiTransactionAsync(client=self.client)
         allowlist_object = await self.client.get_object(allowlist_id)
         entry_object = await self.client.get_object(object_id)
 
         await tx.move_call(
             target=SuiString(
-                f"0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::allowlist::publish"
+                f"0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::{module}::publish"
             ),
             arguments=[
                 allowlist_object.result_data,
@@ -209,28 +226,66 @@ class FileUploader(SuiAccount, CurlCffiClient):
 
         return os.path.join(folder_path, random_image)
 
-    async def check_for_entry(self) -> bool:
+    async def check_for_entry(self, module: str) -> Optional[bool]:
         objects = await self.client.get_objects(self.wallet_address, fetch_all=True)
         data = objects.result_data.to_dict()['data']
         for sui_object in data:
             if sui_object[
                 'type'
-            ] == '0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::allowlist::Cap':
+            ] == f'0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::{module}::Cap':
                 return True
 
+    async def create_subscription_entry(self, entry_name: str):
+        tx = SuiTransactionAsync(client=self.client)
+
+        fee = random.randint(1, 100)
+        deadline = int(random.randint(1, 100) * 60 * 1000)
+        await tx.move_call(
+            target=SuiString(
+                f"0x4cb081457b1e098d566a277f605ba48410e26e66eaab5b3be4f6c560e9501800::subscription::create_service_entry"
+            ),
+            arguments=[
+                SuiU64(fee),
+                SuiU64(deadline),
+                SuiString(entry_name)
+            ]
+        )
+        simulation_status = await self.simulate_tx(tx)
+        if simulation_status is False:
+            logger.error(f'[{self.wallet_address}] | TX failed while simulating entry creation')
+            return False
+
+        status, digest = await self.send_tx(tx)
+        if status is True:
+            logger.success(
+                f'[{self.wallet_address}] | Successfully created subscription entry with name {entry_name} '
+                f'| TX: https://testnet.suivision.xyz/txblock/{digest}'
+            )
+            return True
+        logger.error(
+            f'[{self.wallet_address}] | Failed to create entry | TX: https://testnet.suivision.xyz/txblock/{digest}'
+        )
+        await sleep(0.1)
+
     @retry(retries=RETRIES, delay=PAUSE_BETWEEN_RETRIES, backoff=1.5)
-    async def upload_file(self) -> Optional[bool]:
-        entry_exists = await self.check_for_entry()
+    async def upload_file(self, module: Literal["allowlist", "subscription"]):
+        entry_creation_mapping = {
+            "allowlist": self.create_allowlist_entry,
+            "subscription": self.create_subscription_entry
+        }
+
+        entry_exists = await self.check_for_entry(module=module)
         if entry_exists and not UploadSettings.create_new_entry:
             pass
         elif not entry_exists or UploadSettings.create_new_entry:
             entry_name = self.generate_name()
-            await self.create_allowlist_entry(entry_name)
+            await entry_creation_mapping[module](entry_name)
             await sleep(4)
 
-        allowlist_id, object_id = await self.get_objects()
+        allowlist_id, object_id = await self.get_objects(module=module)
 
-        await self.add_address(allowlist_id, object_id)
+        if module == "allowlist":
+            await self.add_address(allowlist_id, object_id)
         number_of_uploads = random.randint(UploadSettings.number_of_uploads[0], UploadSettings.number_of_uploads[1])
         uploaded = False
         for i in range(number_of_uploads):
@@ -243,7 +298,7 @@ class FileUploader(SuiAccount, CurlCffiClient):
             blob_id = await self.get_blob_id(image_data)
             if not blob_id:
                 continue
-            uploaded = await self.upload_blob(allowlist_id, object_id, blob_id)
+            uploaded = await self.upload_blob(allowlist_id, object_id, blob_id, module=module)
             if i != number_of_uploads:
                 random_pause = random.randint(PAUSE_BETWEEN_MODULES[0], PAUSE_BETWEEN_MODULES[1])
                 logger.debug(f'Sleeping {random_pause} seconds before next upload...')

@@ -29,7 +29,8 @@ async def generate_database(
 
     tasks = []
     if FAUCET: tasks.append('FAUCET')
-    if UPLOAD_FILE: tasks.append('UPLOAD_FILE')
+    if ALLOWLIST_UPLOAD_FILE: tasks.append('ALLOWLIST_UPLOAD_FILE')
+    if SUBSCRIPTION_UPLOAD_FILE: tasks.append('SUBSCRIPTION_UPLOAD_FILE')
 
     has_faucet = 'FAUCET' in tasks
 

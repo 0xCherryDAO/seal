@@ -2,5 +2,6 @@ from src.utils.runner import *
 
 module_handlers = {
     'FAUCET': process_faucet,
-    'UPLOAD_FILE': process_file_upload
+    'ALLOWLIST_UPLOAD_FILE': process_allowlist_file_upload,
+    'SUBSCRIPTION_UPLOAD_FILE': process_subscription_file_upload
 }

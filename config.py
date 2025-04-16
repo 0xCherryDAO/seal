@@ -16,7 +16,8 @@ PAUSE_BETWEEN_WALLETS = [10, 20]
 PAUSE_BETWEEN_MODULES = [10, 20]
 
 FAUCET = False
-UPLOAD_FILE = False
+ALLOWLIST_UPLOAD_FILE = False  # Allowlist Example
+SUBSCRIPTION_UPLOAD_FILE = False  # Subscription Example
 
 
 class UploadSettings:

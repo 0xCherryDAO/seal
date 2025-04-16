@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 
 from loguru import logger
 
@@ -18,11 +18,16 @@ async def process_faucet(route: Route) -> Optional[bool]:
         return True
 
 
-async def process_file_upload(route: Route) -> Optional[bool]:
-    uploader = FileUploader(
-        private_key=route.wallet.private_key,
-        proxy=route.wallet.proxy
-    )
-    uploaded = await uploader.upload_file()
-    if uploaded:
+async def _upload_file(route: Route, module: Literal["allowlist", "subscription"]) -> Optional[bool]:
+    uploader = FileUploader(private_key=route.wallet.private_key, proxy=route.wallet.proxy, module=module)
+    logger.debug(uploader)
+    if await uploader.upload_file(module=module):
         return True
+
+
+async def process_allowlist_file_upload(route: Route) -> Optional[bool]:
+    return await _upload_file(route, "allowlist")
+
+
+async def process_subscription_file_upload(route: Route) -> Optional[bool]:
+    return await _upload_file(route, "subscription")
