@@ -10,6 +10,7 @@ from pysui.sui.sui_txn.async_transaction import SuiTransactionAsync
 from pysui.sui.sui_types import SuiString, SuiU64
 
 from config import RETRIES, PAUSE_BETWEEN_RETRIES, PAUSE_BETWEEN_MODULES, UploadSettings
+from src.modules.file_uploader.image_refactor import add_random_pixel
 from src.utils.common.wrappers.decorators import retry
 from src.utils.proxy_manager import Proxy
 from src.utils.request_client.curl_cffi_client import CurlCffiClient
@@ -210,7 +211,7 @@ class FileUploader(SuiAccount, CurlCffiClient):
     def get_random_image_from_folder(folder_path: str = 'images') -> Optional[str]:
         if not os.path.exists(folder_path) or not os.path.isdir(folder_path):
             logger.error(f"Folder {folder_path} doesn't exist")
-            return 'Screenshot_000.png'
+            return None
 
         files = os.listdir(folder_path)
 
@@ -299,6 +300,7 @@ class FileUploader(SuiAccount, CurlCffiClient):
             if not blob_id:
                 continue
             uploaded = await self.upload_blob(allowlist_id, object_id, blob_id, module=module)
+            await add_random_pixel(image)
             if i != number_of_uploads:
                 random_pause = random.randint(PAUSE_BETWEEN_MODULES[0], PAUSE_BETWEEN_MODULES[1])
                 logger.debug(f'Sleeping {random_pause} seconds before next upload...')

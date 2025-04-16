@@ -9,3 +9,4 @@ pysui==0.81.0
 pyuseragents==1.0.5
 questionary==2.1.0
 SQLAlchemy==2.0.40
+pillow==11.2.1
